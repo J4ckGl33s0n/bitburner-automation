@@ -1,0 +1,22 @@
+{
+  "include": ["NetscriptDefinitions.d.ts", "home/**/*"],
+  "compilerOptions": {
+    "module": "esnext",
+    "target": "esnext",
+    "moduleResolution": "bundler",
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "allowUmdGlobalAccess": true,
+    "types": ["react", "react-dom"],
+    "allowJs": true,
+    "jsx": "react",
+    "paths": {
+      "@ns": ["./NetscriptDefinitions.d.ts"]
+    }
+  }
+}

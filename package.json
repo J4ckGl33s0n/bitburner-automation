@@ -1,0 +1,28 @@
+{
+  "name": "bitburner-automation",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Adaptive hacking and Hacknet automation with native source sync for Bitburner",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "watch": "bitburner-filesync",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "node --test test/*.test.mjs",
+    "check": "npm run typecheck && npm run lint && npm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/react": "^17.0.89",
+    "@types/react-dom": "^17.0.26",
+    "@typescript-eslint/eslint-plugin": "8.71.1",
+    "@typescript-eslint/parser": "8.71.1",
+    "bitburner-filesync": "1.1.5",
+    "eslint": "10.12.0",
+    "typescript": "6.0.3"
+  }
+}
