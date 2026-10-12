@@ -1,6 +1,6 @@
 # bitburner-automation
 
-Automate hacking and manage money-producing Hacknet Nodes with scripts that adapt to available RAM and game progress. Develop JavaScript, TypeScript, and React scripts locally and sync source directly to Bitburner's home server. Supports the browser and Steam versions.
+Automate hacking and coordinate port-program, purchased-server, and money-producing Hacknet purchases with a shared cash reserve. Develop JavaScript, TypeScript, and React scripts locally and sync source directly to Bitburner's home server. Supports the browser and Steam versions.
 
 ## Quick start
 
@@ -16,10 +16,10 @@ Leave the watcher running. In Bitburner, open **Options > Remote API**, set host
 
 ```text
 home
-run /scripts/hack.js
+run /scripts/start.js
 ```
 
-Run launcher and manager scripts with one thread; worker threads are allocated automatically. To check source sync independently, run `template.ts`, which prints `Hello Remote API!`.
+The master launcher starts purchasing with the default $100,000 reserve and 10% investment budget, then starts hacking. Run launcher and manager scripts with one thread; worker threads are allocated automatically. To check source sync independently, run `template.ts`, which prints `Hello Remote API!`.
 
 On Windows, use `npm.cmd` instead of `npm` if PowerShell blocks `npm.ps1`. See the [beginner guide](BeginnersGuide.md) for detailed setup.
 
@@ -27,12 +27,25 @@ On Windows, use `npm.cmd` instead of `npm` if PowerShell blocks `npm.ps1`. See t
 
 | Script | Purpose |
 | --- | --- |
+| `/scripts/start.js` | Start the purchase manager, then hand off to the hacking launcher |
 | `/scripts/hack.js` | Root available servers and start the hacking controller |
 | `/scripts/hack-manager.js` | Coordinate hacking workers; normally started by the launcher |
 | `/scripts/root-hosts.js` | Root servers independently, then run the scanner |
 | `/scripts/scan-hosts.js` | Save network details, including RAM and cores, to `hosts.txt` in-game |
+| `/scripts/purchase-manager.js` | Coordinate TOR, port programs, server growth, and Hacknet spending; opt-in |
+| `/scripts/program-buyer.js` | Internal Singularity child started by the purchase manager |
 | `/scripts/hacknet-manager.js` | Purchase and upgrade money-producing Hacknet Nodes; use `--help` for settings |
 | `template.ts` | Minimal source-sync example |
+
+### Master start
+
+```text
+run /scripts/start.js [max-targets=3] [thread-cap=0]
+```
+
+Run on home with one thread. The master starts the purchase manager with its defaults, or reuses one already running with its existing settings. It gives purchasing a game cycle to initialise, then exits by handing off to `hack.js`, forwarding the two optional hacking arguments. The hacking launcher handles controller placement and duplicate controllers.
+
+If purchases cannot start, the master prints a warning and continues to hacking so income can begin. Free home RAM or stop standalone Hacknet, then rerun the master to retry purchases. The master checks startup only; later manager failures appear in their own logs. With Singularity access and missing programs, leave enough home RAM for the purchase manager and its program buyer before starting. For custom purchase settings, start the purchase manager separately before running the master.
 
 ### Hacking
 
@@ -50,7 +63,30 @@ The startup message identifies the controller's host and PID. Stopping it stops 
 
 Target ranking is a heuristic. Grow sizing is conservative for empty targets, and one hack thread can exceed the 10% goal. The scheduler runs sequential action phases rather than timed batches.
 
-### Hacknet
+### Purchases with a shared reserve
+
+Purchases are opt-in. Run the coordinator on home with one thread, before starting hacking so its program buyer can claim RAM:
+
+```text
+home
+run /scripts/purchase-manager.js --help
+run /scripts/purchase-manager.js --reserve 100000 --budget 0.1 --payback 120 --nodes 20
+run /scripts/hack.js
+```
+
+The coordinator checks Singularity access before starting its program buyer: BitNode 4 or an active Source-File 4 enables automatic purchases. Without access, it logs a reminder to buy TOR and port programs manually and continues server/Hacknet spending with the configured cash reserve. It does not launch the child or reserve money for missing programs in this mode; raise `--reserve` when saving for a manual purchase.
+
+With Singularity access, the coordinator buys TOR, then missing BruteSSH, FTPCrack, relaySMTP, HTTPWorm, and SQLInject programs. Their separate child stays loaded until all five programs are owned, then exits and releases RAM. When programs are missing and access is available, start hacking after the buyer appears in Active Scripts. Leave enough free home RAM for both purchasing processes; the child uses the game's reported script RAM, including the Source-File 4 multiplier. If it cannot start, investments pause and the coordinator logs how much free RAM it needs. Free home RAM and it retries automatically. When all five programs are already owned, no Singularity child is needed.
+
+`--reserve` is the cash floor. Automatic program purchases may spend all cash above it. When automatic programs are enabled, the next missing program's full cost is also protected before investing; `--budget` limits each investment to a fraction of unreserved cash. The default is 10%. Every cycle checks programs when enabled, then attempts at most one server or Hacknet investment, alternating which category gets first opportunity and falling back if it cannot buy. Cycles wait two seconds after processing. Failed purchases retry on later opportunities; buyer crashes, invalid replies, and unexpected Singularity errors stop the coordinator safely.
+
+Server automation fills the game's available slots with 16 GB `pserv-N` servers, then doubles the smallest servers up to the live RAM limit. Existing purchased servers are upgraded in place, preserving scripts and processes. The hacking controller discovers new programs and server capacity at its next normal refresh, within 30 seconds.
+
+`--payback` and `--nodes` retain the Hacknet repayment limit in minutes and node-count cap. Its starter node is exempt from the payback filter. Hash-producing Hacknet Servers are skipped while program and purchased-server automation continues.
+
+Run either the purchase coordinator or standalone Hacknet manager; both reject simultaneous or duplicate buyers. Stopping the coordinator stops only its program child and clears their PID-numbered communication ports. Restart after source edits. The reserve applies to these buyers; manual purchases and unrelated scripts can still spend it. Program saving can pause investments until enough income arrives.
+
+### Standalone Hacknet
 
 Hacknet spending is separate from hacking and must be started explicitly:
 
@@ -59,7 +95,7 @@ run /scripts/hacknet-manager.js --help
 run /scripts/hacknet-manager.js --reserve 100000 --budget 0.1 --payback 120 --nodes 20
 ```
 
-These settings control the cash reserve, fraction of spare cash spent per purchase, maximum payback time in minutes, and node limit. The starter node is exempt from the payback filter. Hash-producing Hacknet Servers need a different manager.
+These settings control the cash reserve, fraction of spare cash spent per purchase, maximum payback time in minutes, and node limit. The starter node is exempt from the payback filter. Hash-producing Hacknet Servers need a different manager. Do not run this alongside the purchase coordinator.
 
 ## Development
 

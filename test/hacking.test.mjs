@@ -390,14 +390,16 @@ test("renamed Hacknet servers are excluded and the scanner avoids unsupported an
   assert.equal(report.maxRam, 1024);
 });
 
-test("documented RAM costs keep the launcher within 8 GB and the controller within 16 GB", async () => {
+test("documented RAM budgets hold and Singularity costs stay isolated in the program buyer", async () => {
   const definitions = ts.createSourceFile("defs.ts", await readFile(new URL("../NetscriptDefinitions.d.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
   const costs = new Map();
+  const prefixes = { NS: "", Hacknet: "hacknet.", Cloud: "cloud.", Singularity: "singularity." };
   for (const statement of definitions.statements) {
-    if (!ts.isInterfaceDeclaration(statement) || !["NS", "Hacknet"].includes(statement.name.text)) continue;
+    if (!ts.isInterfaceDeclaration(statement) || !Object.hasOwn(prefixes, statement.name.text)) continue;
     for (const member of statement.members) {
       const cost = member.getFullText(definitions).match(/RAM cost:\s*([\d.]+)\s*GB/i);
-      if (cost && member.name) costs.set((statement.name.text === "Hacknet" ? "hacknet." : "") + member.name.getText(definitions), Number(cost[1]));
+      const multiplier = /GB\s*\*\s*16/.test(member.getFullText(definitions)) ? 16 : 1;
+      if (cost && member.name) costs.set(prefixes[statement.name.text] + member.name.getText(definitions), Number(cost[1]) * multiplier);
     }
   }
   async function methodsIn(url, seen = new Set(), methods = new Set()) {
@@ -418,17 +420,21 @@ test("documented RAM costs keep the launcher within 8 GB and the controller with
     return methods;
   }
   const measured = {};
-  for (const name of ["hack", "hack-manager", "hack-worker", "grow-worker", "weaken-worker"]) {
+  for (const name of ["start", "hack", "hack-manager", "hack-worker", "grow-worker", "weaken-worker", "purchase-manager", "hacknet-manager", "program-buyer"]) {
     const methods = await methodsIn(new URL(`../home/scripts/${name}.js`, import.meta.url));
     assert.deepEqual([...methods].filter(method => !costs.has(method)), [], "Every API call needs a documented RAM cost");
+    if (name !== "program-buyer") assert.ok([...methods].every(method => !method.startsWith("singularity.")));
     // Include all imported helper calls, making this a conservative upper bound.
     measured[name] = Math.round((1.6 + [...methods].reduce((sum, method) => sum + costs.get(method), 0)) * 100) / 100;
   }
   assert.ok(measured.hack <= 8, "Launcher must fit a starter home");
+  assert.ok(measured.start <= 8, "Master launcher must fit a starter home");
   assert.ok(measured["hack-manager"] <= 16, "Controller must fit a rooted starter server");
   assert.ok(measured["hack-worker"] <= 1.7);
   assert.ok(measured["grow-worker"] <= 1.75);
   assert.ok(measured["weaken-worker"] <= 1.75);
+  assert.ok(measured["purchase-manager"] <= 16, `Purchase coordinator: ${measured["purchase-manager"]} GB`);
+  assert.ok(measured["program-buyer"] <= 80, `Program buyer at SF4 level 1: ${measured["program-buyer"]} GB`);
 });
 
 test("single-action workers validate targets and invoke only their action", async () => {

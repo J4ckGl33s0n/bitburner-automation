@@ -6,12 +6,34 @@ Track proposed additions here and record completed changes below with their date
 
 In priority order:
 
-- [ ] **Purchases with a shared cash reserve:** coordinate port-program and purchased-server spending with Hacknet purchases so managers do not compete for the same budget.
 - [ ] **Coding contracts:** discover contracts and add tested solvers incrementally, leaving unsupported contracts untouched.
 - [ ] **Timed hacking batches:** coordinate hack, grow, and weaken completion times to improve income once enough RAM is available.
 - [ ] **Faction and reset automation:** add progression workflows after the required APIs are unlocked.
 
 ## Completed changes
+
+### 2026-10-12 — Master start script
+
+- [x] One `/scripts/start.js` command starts the purchase manager, then hands off to the existing hacking launcher and releases its RAM.
+- [x] Reuse active purchasing settings, forward optional hacking arguments, and warn while continuing hacking if purchases cannot start.
+- [x] Startup regression coverage for ordering, invalid inputs, duplicate starts, failures, and spawn termination.
+
+Validation: `npm run check` passed all 53 tests, including the master launcher's 8 GB RAM budget. In-game startup remains unverified.
+
+Remaining limits: startup requires enough home RAM; the master checks initial launch only and does not supervise managers after handoff.
+
+### 2026-10-12 — Purchases with a shared cash reserve
+
+- [x] Opt-in purchase coordinator with a cash floor, savings for the next port program, and alternating server/Hacknet investment opportunities.
+- [x] Separate resident Singularity buyer for TOR and five port openers, with RAM waiting, reply validation, and owned-child cleanup.
+- [x] Detect Singularity access before launching the buyer; continue server/Hacknet spending when programs require manual purchases.
+- [x] Automatic 16 GB purchased-server fleet growth and in-place RAM upgrades up to live game limits.
+- [x] Reused Hacknet payback selection and standalone settings, with mutual exclusion between spending managers.
+- [x] Regression coverage for reserve boundaries, fresh balances, purchase failures, fleet limits, RAM isolation, and buyer lifecycle.
+
+Validation: `npm run check` passed all 48 tests, including unavailable/disabled Source-File 4 and BitNode 4 access. No accessible game session was available; in-game purchases and actual script RAM remain unverified.
+
+Remaining limits: automatic programs require Singularity and sufficient home RAM; program saving can pause investments. Without Singularity, only the configured cash reserve is protected; raise it to save for manual program purchases. Manual purchases and unrelated scripts are outside the shared reserve. Hacknet automation supports money-producing Nodes, not hash-producing Servers. TOR's $200,000 price is fixed because there is no price API.
 
 ### 2026-10-12 — Dynamic hacking core
 
