@@ -12,7 +12,7 @@ export function purchaseSettings(ns) {
   if (options.help) {
     ns.tprint(`run ${ns.getScriptName()} --reserve 100000 --budget 0.1 --payback 120 --nodes 20`);
     ns.tprint("reserve: dollars to keep; budget: fraction of unreserved cash per investment");
-    ns.tprint("payback: maximum Hacknet repayment time in minutes; nodes: Hacknet node count limit");
+    ns.tprint("payback: maximum Hacknet upgrade repayment time in minutes (new nodes exempt); nodes: Hacknet node count limit");
     return null;
   }
   const settings = {

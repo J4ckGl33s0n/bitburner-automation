@@ -39,10 +39,10 @@ export function purchaseHacknet(ns, settings, protectedCash = settings.reserve) 
   const best = getCandidates(ns, stats, settings.nodes)
     .filter(action => Number.isFinite(action.cost) && action.cost > 0 &&
       Number.isFinite(action.gain) && action.gain > 0 && action.cost <= budget &&
-      action.cost / action.gain <= settings.payback * 60)
+      (action.type === "node" || action.cost / action.gain <= settings.payback * 60))
     .sort((a, b) => b.gain / b.cost - a.gain / a.cost)[0];
   if (!best || !canAfford(ns, best.cost, protectedCash, settings.budget)) {
-    ns.print(`Waiting: no purchase fits budget $${budget.toFixed(0)} and payback limit ${settings.payback} min.`);
+    ns.print(`Waiting: no purchase fits budget $${budget.toFixed(0)} and upgrade payback limit ${settings.payback} min (new nodes exempt).`);
     return false;
   }
   if (buy(ns, best)) {

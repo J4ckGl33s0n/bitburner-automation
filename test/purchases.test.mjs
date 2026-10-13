@@ -370,7 +370,66 @@ test("server purchases and upgrades reject invalid costs and recheck changing ba
   assert.equal(purchaseServer(g.ns, g.settings), false);
 });
 
-test("Hacknet preserves starter exemption, ROI choice, payback filter, and configured/game node limits", () => {
+test("both managers buy new nodes above the payback limit while rejecting slow upgrades", async () => {
+  for (const [script, entry] of [[PURCHASE_MANAGER, manage], ["/scripts/hacknet-manager.js", hacknet]]) {
+    const g = game({ script });
+    for (let i = 0; i < 5; i++) g.nodes.push({ level: 84, ram: 2, cores: 1, production: 138.435 });
+    g.nodeCost = 20414;
+    g.levelCost = 12212;
+    g.nodeRamCost = 72348;
+    g.coreCost = 471015;
+    g.serverLimit = 0;
+    await run(g, 1, undefined, entry);
+    assert.deepEqual(g.spends.map(s => s.type), ["node"]);
+    assert.equal(g.nodes.length, 6);
+    assert.ok(g.logs.some(s => s.includes("payback 213.7 min")));
+  }
+});
+
+test("exempt new nodes still require valid prices, production, protected cash, and a fresh budget", () => {
+  const g = game();
+  g.nodes.push({ level: 1, ram: 1, cores: 1, production: 1.59 });
+  for (const cost of [-1, 0, NaN, Infinity]) {
+    g.nodeCost = cost;
+    assert.equal(purchaseHacknet(g.ns, g.settings), false);
+  }
+  g.nodeCost = 20414;
+  for (const production of [-1, 0, NaN, Infinity]) {
+    g.nodes[0].production = production;
+    assert.equal(purchaseHacknet(g.ns, g.settings), false);
+  }
+  g.nodes[0].production = 1.59;
+  const protectedCash = g.settings.reserve + 500000;
+  const boundary = protectedCash + g.nodeCost / g.settings.budget;
+  for (const money of [protectedCash, boundary - 1]) {
+    g.money = money;
+    assert.equal(purchaseHacknet(g.ns, g.settings, protectedCash), false);
+  }
+  let reads = 0;
+  g.ns.getServerMoneyAvailable = () => ++reads === 1 ? boundary : protectedCash;
+  assert.equal(purchaseHacknet(g.ns, g.settings, protectedCash), false);
+  assert.equal(g.attempts.length, 0);
+  g.money = boundary;
+  g.ns.getServerMoneyAvailable = () => g.money;
+  g.fail.add("node");
+  assert.equal(purchaseHacknet(g.ns, g.settings, protectedCash), true);
+  assert.equal(g.spends.length, 0);
+  g.fail.delete("node");
+  assert.equal(purchaseHacknet(g.ns, g.settings, protectedCash), true);
+  assert.equal(g.spends[0].type, "node");
+  assert.equal(g.money, boundary - g.nodeCost);
+});
+
+test("eligible upgrades with better income per dollar beat exempt new nodes", () => {
+  const g = game();
+  g.nodes.push({ level: 84, ram: 2, cores: 1, production: 138.435 });
+  g.nodeCost = 20414;
+  g.levelCost = 10000;
+  assert.equal(purchaseHacknet(g.ns, g.settings), true);
+  assert.deepEqual(g.spends.map(s => s.type), ["level"]);
+});
+
+test("Hacknet preserves starter exemption, ROI choice, upgrade payback filter, and configured/game node limits", () => {
   const starter = game({ settings: { payback: 0.0001 } });
   assert.equal(purchaseHacknet(starter.ns, starter.settings), true);
   const g = game({ settings: { nodes: 1 } });

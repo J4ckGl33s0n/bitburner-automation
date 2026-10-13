@@ -393,7 +393,7 @@ test("renamed Hacknet servers are excluded and the scanner avoids unsupported an
 test("documented RAM budgets hold and Singularity costs stay isolated in the program buyer", async () => {
   const definitions = ts.createSourceFile("defs.ts", await readFile(new URL("../NetscriptDefinitions.d.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
   const costs = new Map();
-  const prefixes = { NS: "", Hacknet: "hacknet.", Cloud: "cloud.", Singularity: "singularity." };
+  const prefixes = { NS: "", Hacknet: "hacknet.", Cloud: "cloud.", Singularity: "singularity.", Darknet: "dnet.", CodingContract: "codingcontract." };
   for (const statement of definitions.statements) {
     if (!ts.isInterfaceDeclaration(statement) || !Object.hasOwn(prefixes, statement.name.text)) continue;
     for (const member of statement.members) {
@@ -420,7 +420,7 @@ test("documented RAM budgets hold and Singularity costs stay isolated in the pro
     return methods;
   }
   const measured = {};
-  for (const name of ["start", "hack", "hack-manager", "hack-worker", "grow-worker", "weaken-worker", "purchase-manager", "hacknet-manager", "program-buyer"]) {
+  for (const name of ["start", "hack", "hack-manager", "hack-worker", "grow-worker", "weaken-worker", "purchase-manager", "hacknet-manager", "program-buyer", "darknet-manager", "darknet-worker", "contract-manager"]) {
     const methods = await methodsIn(new URL(`../home/scripts/${name}.js`, import.meta.url));
     assert.deepEqual([...methods].filter(method => !costs.has(method)), [], "Every API call needs a documented RAM cost");
     if (name !== "program-buyer") assert.ok([...methods].every(method => !method.startsWith("singularity.")));
@@ -435,6 +435,9 @@ test("documented RAM budgets hold and Singularity costs stay isolated in the pro
   assert.ok(measured["weaken-worker"] <= 1.75);
   assert.ok(measured["purchase-manager"] <= 16, `Purchase coordinator: ${measured["purchase-manager"]} GB`);
   assert.ok(measured["program-buyer"] <= 80, `Program buyer at SF4 level 1: ${measured["program-buyer"]} GB`);
+  assert.ok(measured["darknet-manager"] <= 8, `Darknet coordinator: ${measured["darknet-manager"]} GB`);
+  assert.ok(measured["darknet-worker"] <= 12, `Darknet explorer: ${measured["darknet-worker"]} GB`);
+  assert.ok(measured["contract-manager"] <= 32, `Contract manager: ${measured["contract-manager"]} GB`);
 });
 
 test("single-action workers validate targets and invoke only their action", async () => {
