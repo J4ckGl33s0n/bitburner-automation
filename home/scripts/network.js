@@ -6,15 +6,20 @@ export const WORKERS = {
   weaken: "/scripts/weaken-worker.js",
 };
 
-/** @param {import("@ns").NS} ns */
-export function scanAllHosts(ns) {
+/**
+ * @param {import("@ns").NS} ns
+ * @param {Map<string, string>} [paths]
+ */
+export function scanAllHosts(ns, paths) {
   const hosts = ["home"];
   const discovered = new Set(hosts);
+  paths?.set("home", "home");
   for (let i = 0; i < hosts.length; i++) {
     for (const neighbour of ns.scan(hosts[i])) {
       if (!discovered.has(neighbour)) {
         discovered.add(neighbour);
         hosts.push(neighbour);
+        paths?.set(neighbour, hosts[i] === "home" ? neighbour : `${paths.get(hosts[i])} > ${neighbour}`);
       }
     }
   }

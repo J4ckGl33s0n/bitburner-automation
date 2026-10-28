@@ -2,10 +2,12 @@ import { scanAllHosts } from "./network.js";
 
 /** @param {import("@ns").NS} ns */
 export async function main(ns) {
-  const hostDetails = scanAllHosts(ns).map(host => {
+  const paths = new Map();
+  const hostDetails = scanAllHosts(ns, paths).map(host => {
     const server = ns.getServer(host);
     return {
       hostname: host,
+      path: paths.get(host),
       hasRootAccess: server.hasAdminRights,
       requiredHackingLevel: server.requiredHackingSkill ?? null,
       requiredOpenPorts: server.numOpenPortsRequired ?? null,

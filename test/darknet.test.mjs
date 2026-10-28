@@ -2,9 +2,51 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { main as manager } from "../home/scripts/darknet-manager.js";
 import { main as worker } from "../home/scripts/darknet-worker.js";
-import { DARKNET_FILES, DARKNET_MANAGER, DARKNET_PROGRAM, DARKNET_WORKER, passwordCandidates } from "../home/scripts/darknet.js";
+import { DARKNET_FILES, DARKNET_MANAGER, DARKNET_PROGRAM, DARKNET_WORKER, passwordCandidates, DARKNET_DIAGNOSTICS, validDarknetReport } from "../home/scripts/darknet.js";
 
 const STOP = new Error("stop mock clock");
+
+test("darknet blockers retain reproducible hints, RAM and timings from owned explorers only", async () => {
+  const g = game();
+  g.servers.get("alpha").modelId = "Unseen model";
+  g.servers.get("alpha").data = "fixture data";
+  g.servers.get("beta").maxRam = 4;
+  await run(g, worker, 2);
+  const reports = g.ports.get(1).filter(r => r.reason);
+  const unsupported = reports.find(r => r.reason === "unsupported");
+  assert.equal(unsupported.data, "fixture data");
+  assert.equal(unsupported.requiredRam, 8);
+  assert.ok(reports.some(r => r.reason === "ram" && r.availableRam === 4));
+  assert.ok(reports.every(validDarknetReport));
+  g.sleepLimit = 2;
+  g.sleepHook = (pid, count) => {
+    if (pid !== 1 || count !== 1) return;
+    const q = g.ports.get(1);
+    q.push(unsupported, unsupported, { ...unsupported, pid: 999 }, { ...unsupported, authMs: NaN });
+  };
+  await run(g, manager, 1);
+  const saved = JSON.parse(g.data.get(DARKNET_DIAGNOSTICS));
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].count, 2);
+  assert.equal(saved[0].pid, undefined);
+  const previous = g.data.get(DARKNET_DIAGNOSTICS);
+  g.sleepHook = null; await run(g, manager, 1);
+  assert.equal(g.data.get(DARKNET_DIAGNOSTICS), previous);
+});
+
+test("corrupt diagnostic files are preserved and failed writes leave exploration running", async () => {
+  const g = game(); g.data.set(DARKNET_DIAGNOSTICS, "broken");
+  await run(g, manager, 1);
+  assert.equal(g.data.get(DARKNET_DIAGNOSTICS), "broken");
+  assert.ok(g.logs.some(l => l.includes("existing file preserved")));
+  const h = game(); h.servers.get("alpha").modelId = "Unknown";
+  await run(h, worker, 2);
+  const blocker = h.ports.get(1).find(r => r.reason === "unsupported");
+  h.failWrite = true; h.sleepLimit = 2;
+  h.sleepHook = (pid, count) => { if (pid === 1 && count === 1) h.ports.get(1).push(blocker); };
+  await run(h, manager, 1);
+  assert.ok(h.logs.some(l => l.includes("Exploration continues")));
+});
 const binary = password => [...password].map(char => char.charCodeAt(0).toString(2).padStart(8, "0")).join(" ");
 const hint = (modelId, passwordLength, passwordFormat = "numeric", data = "", passwordHint = "") =>
   ({ modelId, passwordLength, passwordFormat, data, passwordHint });
@@ -38,6 +80,7 @@ test("unknown models, malformed hints, lengths, and formats are never guessed or
 
 function game() {
   const g = {
+    data: new Map(),
     processes: new Map(), servers: new Map(), neighbours: new Map(), sessions: new Set(), authenticated: new Set(),
     files: new Set([DARKNET_MANAGER, ...DARKNET_FILES, DARKNET_PROGRAM]), tor: true, nextPid: 10,
     launches: [], copies: [], attempts: [], reclaims: [], caches: [], killed: [], logs: [], exits: new Map(),
@@ -76,7 +119,9 @@ function game() {
     return {
       pid, args: p.args, self: () => p, getHostname: () => p.server,
       disableLog: () => {}, tprint: message => g.logs.push(message), print: message => g.logs.push(message),
-      hasTorRouter: () => g.tor, fileExists: (file, host) => host === "home" && g.files.has(file),
+      hasTorRouter: () => g.tor, fileExists: (file, host) => host === "home" && (g.files.has(file) || g.data.has(file)),
+      read: file => g.data.get(file) ?? "",
+      write: (file, value) => { if (!g.failWrite) g.data.set(file, value); },
       getScriptRam: () => g.workerRam ?? 8,
       getServerMaxRam: target => g.servers.get(target).maxRam,
       getServerUsedRam: used,
@@ -219,7 +264,7 @@ test("explorers traverse cycles with separate sessions, preserve files, and open
   g.servers.get("alpha").caches.add("vault.cache");
   await run(g, worker, 2);
   assert.deepEqual(g.launches.map(p => p.target), ["alpha", "beta"]);
-  assert.deepEqual(g.ports.get(1), [{ pid: 2, host: "darkweb" }]);
+  assert.deepEqual(g.ports.get(1).filter(r => !r.reason), [{ pid: 2, host: "darkweb" }]);
   const alphaPid = g.launches[0].pid;
   g.processes.delete(g.launches[1].pid);
   await run(g, worker, alphaPid);

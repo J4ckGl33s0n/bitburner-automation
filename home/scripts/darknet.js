@@ -2,6 +2,20 @@ export const DARKNET_MANAGER = "/scripts/darknet-manager.js";
 export const DARKNET_WORKER = "/scripts/darknet-worker.js";
 export const DARKNET_FILES = [DARKNET_WORKER, "/scripts/darknet.js"];
 export const DARKNET_PROGRAM = "DarkscapeNavigator.exe";
+export const DARKNET_DIAGNOSTICS = "/data/darknet-blockers.txt";
+
+export function validDarknetReport(report) {
+  return report && ["unsupported", "ram", "timing", "auth"].includes(report.reason) &&
+    ["host", "target", "modelId", "passwordHint", "data", "passwordFormat"].every(key => typeof report[key] === "string" && report[key].length <= 65536) &&
+    ["numeric", "alphabetic", "alphanumeric", "ASCII", "unicode"].includes(report.passwordFormat) &&
+    Number.isSafeInteger(report.passwordLength) && report.passwordLength >= 0 &&
+    ["availableRam", "requiredRam", "authMs", "reallocationMs", "passMs"].every(key => Number.isFinite(report[key]) && report[key] >= 0);
+}
+
+export function darknetReportKey(report) {
+  return JSON.stringify([report.reason, report.host, report.target, report.modelId, report.passwordHint,
+    report.data, report.passwordLength, report.passwordFormat]);
+}
 
 export function isExplorer(process, managerPid) {
   return process?.filename.replace(/^\/+/, "") === DARKNET_WORKER.slice(1) &&

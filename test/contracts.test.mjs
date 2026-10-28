@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
+import ts from "typescript";
 import { SOLVERS } from "../home/scripts/contracts.js";
 import { main } from "../home/scripts/contract-manager.js";
 
@@ -26,21 +28,52 @@ const fixtures = {
   "Unique Paths in a Grid I": [[[3, 7], 28], [[1, 5], 1], [[5, 1], 1], [[1, 1], 1]],
   "Unique Paths in a Grid II": [[[[0, 0, 0], [0, 1, 0], [0, 0, 0]], 2], [[[1]], 0], [[[0]], 1],
     [[[0, 0], [0, 1]], 0], [[[0, 1, 0]], 0]],
+  "Shortest Path in a Grid": [[[[0, 0], [0, 0]], "DR"], [[[0, 1], [1, 0]], ""], [[[0]], ""],
+    [[[0, 0, 0]], "RR"], [[[0], [0], [0]], "DD"]],
+  "Sanitize Parentheses in Expression": [["()())()", ["(())()", "()()()"]], ["(a)())()", ["(a())()", "(a)()()"]],
+    [")(", [""]], ["abc", ["abc"]], ["", [""]]],
+  "Find All Valid Math Expressions": [[["123", 6], ["1+2+3", "1*2*3"]], [["105", 5], ["1*0+5", "10-5"]],
+    [["00", 0], ["0+0", "0-0", "0*0"]], [["232", 8], ["2*3+2", "2+3*2"]], [["3456237490", 9191], []]],
+  "HammingCodes: Integer to Encoded Binary": [[0, "0000"], [8, "11110000"], [21, "1001101011"]],
+  "HammingCodes: Encoded Binary to Integer": [["0000", 0], ["11110000", 8], ["1001101010", 21]],
+  "Proper 2-Coloring of a Graph": [[[4, [[0, 1], [2, 3]]], [0, 1, 0, 1]], [[3, []], [0, 0, 0]],
+    [[3, [[0, 1], [1, 2], [2, 0]]], []], [[1, [[0, 0]]], []]],
+  "Compression I: RLE Compression": [["", ""], ["aabccc", "2a1b3c"], ["aaaaaaaaaaa", "9a2a"], ["1111111111", "9111"]],
+  "Compression II: LZ Decompression": [["", ""], ["1a91", "aaaaaaaaaa"], ["9abcdefghi02jk", "abcdefghijk"],
+    ["7abracad47", "abracadabra"], ["4miss433ppi", "mississippi"], ["627182844", "2718281828"]],
+  "Compression III: LZ Compression": [["", 0], ["abc", 4], ["abcdefghijk", 14], ["aaaaaaaaaa", 4],
+    ["abracadabra", 10], ["mississippi", 11], ["aaaaaaaaaaaa", 6]],
+  "Encryption I: Caesar Cipher": [[["ABC XYZ", 3], "XYZ UVW"], [["HELLO WORLD", 0], "HELLO WORLD"]],
+  "Encryption II: Vigenère Cipher": [[["ATTACKATDAWN", "LEMON"], "LXFOPVEFRNHR"], [["DASHBOARD", "LINUX"], "OIFBYZIEX"],
+    [["ZZZ", "B"], "AAA"]],
+  "Square Root": [[0n, "0"], [1n, "1"], [2n, "1"], [3n, "2"], [6n, "2"], [7n, "3"], [100n, "10"]],
+  "Total Number of Primes": [[[0, 20], 8], [[0, 1], 0], [[2, 2], 1], [[4, 4], 0], [[11, 13], 2]],
+  "Largest Rectangle in a Matrix": [[[[1, 0, 0], [0, 0, 0]], [[0, 1], [1, 2]]],
+    [[[0, 0, 0, 1], [0, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], [[0, 0], [3, 1]]], [[[0]], [[0, 0], [0, 0]]]],
 };
 
 for (const [type, cases] of Object.entries(fixtures)) {
   test(`${type}: known answers, edges, and input preservation`, () => {
     for (const [data, expected] of cases) {
       const original = globalThis.structuredClone(data);
-      assert.deepEqual(SOLVERS[type](data), expected);
+      const answer = SOLVERS[type](data);
+      if (type === "Compression III: LZ Compression") {
+        assert.equal(answer.length, expected);
+        assert.equal(SOLVERS["Compression II: LZ Decompression"](answer), data);
+      } else if (["Sanitize Parentheses in Expression", "Find All Valid Math Expressions"].includes(type)) {
+        assert.deepEqual([...answer].sort(), [...expected].sort());
+      } else assert.deepEqual(answer, expected);
       assert.deepEqual(data, original);
     }
   });
 }
 
-test("every advertised solver has known-answer coverage", () => {
+test("every game-defined contract type has a solver and known-answer coverage", async () => {
   assert.deepEqual(Object.keys(SOLVERS).sort(), Object.keys(fixtures).sort());
-  assert.equal(Object.keys(SOLVERS).length, 16);
+  const definitions = ts.createSourceFile("defs.ts", await readFile(new URL("../NetscriptDefinitions.d.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+  const signatures = definitions.statements.find(node => ts.isTypeAliasDeclaration(node) && node.name.text === "CodingContractSignatures");
+  assert.ok(signatures);
+  assert.deepEqual(Object.keys(SOLVERS).sort(), signatures.type.members.map(member => member.name.text).sort());
 });
 
 function* arrays(length, values) {
@@ -105,6 +138,224 @@ test("grid solvers match enumerated paths across all small obstacle grids", () =
   }
 });
 
+test("shortest paths match repeated distance relaxation on every small obstacle grid", () => {
+  for (let rows = 1; rows <= 3; rows++) {
+    for (let cols = 1; cols <= 3; cols++) {
+      for (const cells of arrays(rows * cols, [0, 1])) {
+        const grid = Array.from({ length: rows }, (_, r) => cells.slice(r * cols, (r + 1) * cols));
+        const distance = Array.from({ length: rows }, () => Array(cols).fill(Infinity));
+        if (!grid[0][0]) distance[0][0] = 0;
+        for (let pass = 0; pass < rows * cols; pass++) {
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              if (grid[r][c]) continue;
+              for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                distance[r][c] = Math.min(distance[r][c], (distance[r + dr]?.[c + dc] ?? Infinity) + 1);
+              }
+            }
+          }
+        }
+        const path = SOLVERS["Shortest Path in a Grid"](grid);
+        if (!Number.isFinite(distance.at(-1).at(-1))) { assert.equal(path, ""); continue; }
+        assert.equal(path.length, distance.at(-1).at(-1));
+        let r = 0;
+        let c = 0;
+        for (const step of path) {
+          const [dr, dc] = { U: [-1, 0], D: [1, 0], L: [0, -1], R: [0, 1] }[step];
+          r += dr; c += dc;
+          assert.equal(grid[r]?.[c], 0);
+        }
+        assert.deepEqual([r, c], [rows - 1, cols - 1]);
+      }
+    }
+  }
+});
+
+test("graph coloring matches all possible assignments for every graph up to five vertices", () => {
+  for (let count = 0; count <= 5; count++) {
+    const pairs = [];
+    for (let a = 0; a < count; a++) for (let b = a + 1; b < count; b++) pairs.push([a, b]);
+    for (const present of arrays(pairs.length, [0, 1])) {
+      const edges = pairs.filter((_, i) => present[i]);
+      const possible = [...arrays(count, [0, 1])].some(colors => edges.every(([a, b]) => colors[a] !== colors[b]));
+      const answer = SOLVERS["Proper 2-Coloring of a Graph"]([count, edges]);
+      if (!possible) assert.deepEqual(answer, []);
+      else {
+        assert.equal(answer.length, count);
+        assert.ok(answer.every(color => color === 0 || color === 1));
+        assert.ok(edges.every(([a, b]) => answer[a] !== answer[b]));
+      }
+    }
+  }
+});
+
+function balanced(text) {
+  let balance = 0;
+  for (const char of text) {
+    if (char === "(") balance++;
+    if (char === ")" && --balance < 0) return false;
+  }
+  return balance === 0;
+}
+
+test("parentheses sanitizing matches exhaustive deletions and preserves other characters", () => {
+  for (let length = 0; length <= 7; length++) {
+    for (const chars of arrays(length, ["(", ")", "a"])) {
+      const candidates = new Set();
+      let longest = -1;
+      for (const keep of arrays(length, [0, 1])) {
+        if (chars.some((char, i) => char === "a" && !keep[i])) continue;
+        const text = chars.filter((_, i) => keep[i]).join("");
+        if (!balanced(text) || text.length < longest) continue;
+        if (text.length > longest) { candidates.clear(); longest = text.length; }
+        candidates.add(text);
+      }
+      const answers = SOLVERS["Sanitize Parentheses in Expression"](chars.join(""));
+      assert.equal(new Set(answers).size, answers.length);
+      assert.deepEqual([...answers].sort(), [...candidates].sort());
+    }
+  }
+});
+
+test("math expressions match independently evaluated operator placements for small digit strings", () => {
+  for (let length = 1; length <= 4; length++) {
+    for (const digits of arrays(length, ["0", "1", "2"])) {
+      const byValue = new Map();
+      for (const operators of arrays(length - 1, ["", "+", "-", "*"])) {
+        const expression = digits.map((digit, i) => digit + (operators[i] ?? "")).join("");
+        if (/(?:^|[+*-])0\d/.test(expression)) continue;
+        const value = expression.split(/(?=[+-])/).reduce((sum, term) =>
+          sum + term.split("*").map(Number).reduce((product, number) => product * number, 1), 0);
+        if (!byValue.has(value)) byValue.set(value, []);
+        byValue.get(value).push(expression);
+      }
+      for (let target = -10; target <= 10; target++) {
+        const answers = SOLVERS["Find All Valid Math Expressions"]([digits.join(""), target]);
+        assert.equal(new Set(answers).size, answers.length);
+        assert.deepEqual([...answers].sort(), (byValue.get(target) ?? []).sort());
+      }
+    }
+  }
+});
+
+test("Hamming codes preserve wide payloads and correct every single-bit corruption", () => {
+  const encode = SOLVERS["HammingCodes: Integer to Encoded Binary"];
+  const decode = SOLVERS["HammingCodes: Encoded Binary to Integer"];
+  for (const value of [...Array.from({ length: 257 }, (_, i) => i), 2 ** 32 + 1234567, Number.MAX_SAFE_INTEGER, 2 ** 57]) {
+    const encoded = encode(value);
+    const bits = [...encoded].map(Number);
+    assert.equal(bits.reduce((sum, bit) => sum + bit, 0) % 2, 0);
+    for (let parity = 1; parity < bits.length; parity *= 2) {
+      assert.equal(bits.reduce((sum, bit, index) => sum + ((index & parity) ? bit : 0), 0) % 2, 0);
+    }
+    assert.equal(bits.filter((_, i) => i > 0 && (i & (i - 1)) !== 0).join(""), value.toString(2));
+    assert.equal(decode(encoded), value);
+    for (let i = 0; i < encoded.length; i++) {
+      const corrupted = encoded.slice(0, i) + (encoded[i] === "0" ? "1" : "0") + encoded.slice(i + 1);
+      assert.equal(decode(corrupted), value);
+    }
+  }
+});
+
+function shortestEncodingLength(text) {
+  // Dijkstra over all valid chunks, independent of the production prefix DP.
+  const queue = [[0, 0, 0]];
+  const seen = new Set();
+  while (queue.length) {
+    queue.sort((a, b) => a[0] - b[0]);
+    const [cost, position, mode] = queue.shift();
+    const key = `${position},${mode}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (position === text.length) return cost;
+    queue.push([cost + 1, position, 1 - mode]);
+    for (let length = 1; length <= 9 && position + length <= text.length; length++) {
+      if (mode === 0) queue.push([cost + 1 + length, position + length, 1]);
+      else {
+        for (let distance = 1; distance <= Math.min(9, position); distance++) {
+          let matches = true;
+          for (let i = 0; i < length; i++) if (text[position + i] !== text[position + i - distance]) matches = false;
+          if (matches) queue.push([cost + 2, position + length, 0]);
+        }
+      }
+    }
+  }
+  assert.fail("Literal chunks must always provide an encoding");
+}
+
+test("LZ encodings are shortest and round-trip for exhaustive short strings", () => {
+  for (let length = 0; length <= 7; length++) {
+    for (const chars of arrays(length, ["a", "b", "0"])) {
+      const text = chars.join("");
+      const encoded = SOLVERS["Compression III: LZ Compression"](text);
+      assert.equal(encoded.length, shortestEncodingLength(text));
+      assert.equal(SOLVERS["Compression II: LZ Decompression"](encoded), text);
+    }
+  }
+  const decode = SOLVERS["Compression II: LZ Decompression"];
+  for (const invalid of ["x", "3ab", "1110", "012", "1a99x"]) assert.throws(() => decode(invalid));
+});
+
+test("Square Root keeps 200-digit precision and rounds at both integer boundaries", () => {
+  const solve = SOLVERS["Square Root"];
+  for (const root of [2n, 10n, 10n ** 100n + 123456789n]) {
+    assert.equal(solve(root * root), root.toString());
+    assert.equal(solve(root * root - root), (root - 1n).toString());
+    assert.equal(solve(root * root - root + 1n), root.toString());
+    assert.equal(solve(root * root + root), root.toString());
+    assert.equal(solve(root * root + root + 1n), (root + 1n).toString());
+  }
+  assert.throws(() => solve(-1n));
+  assert.throws(() => solve(100));
+});
+
+function isPrime(value) {
+  if (value < 2) return false;
+  for (let divisor = 2; divisor * divisor <= value; divisor++) if (value % divisor === 0) return false;
+  return true;
+}
+
+test("prime counts match trial division, inclusive boundaries, and the maximum generated endpoint", () => {
+  for (let low = 0; low <= 50; low++) {
+    for (let high = low; high <= 80; high++) {
+      let count = 0;
+      for (let value = low; value <= high; value++) if (isPrime(value)) count++;
+      assert.equal(SOLVERS["Total Number of Primes"]([low, high]), count);
+    }
+  }
+  assert.equal(SOLVERS["Total Number of Primes"]([0, 1000000]), 78498);
+  const low = 5999900;
+  const high = 6000000;
+  assert.equal(SOLVERS["Total Number of Primes"]([low, high]), Array.from({ length: high - low + 1 }, (_, i) => low + i).filter(isPrime).length);
+});
+
+test("rectangle coordinates achieve exhaustive maximal all-zero areas, including ties", () => {
+  for (let rows = 1; rows <= 3; rows++) {
+    for (let cols = 1; cols <= 3; cols++) {
+      for (const cells of arrays(rows * cols, [0, 1])) {
+        const grid = Array.from({ length: rows }, (_, r) => cells.slice(r * cols, (r + 1) * cols));
+        let maxArea = 0;
+        for (let top = 0; top < rows; top++) {
+          for (let bottom = top; bottom < rows; bottom++) {
+            for (let left = 0; left < cols; left++) {
+              for (let right = left; right < cols; right++) {
+                if (grid.slice(top, bottom + 1).every(row => row.slice(left, right + 1).every(cell => !cell))) {
+                  maxArea = Math.max(maxArea, (bottom - top + 1) * (right - left + 1));
+                }
+              }
+            }
+          }
+        }
+        if (!maxArea) { assert.throws(() => SOLVERS["Largest Rectangle in a Matrix"](grid)); continue; }
+        const [[top, left], [bottom, right]] = SOLVERS["Largest Rectangle in a Matrix"](grid);
+        assert.ok(top >= 0 && left >= 0 && bottom < rows && right < cols && top <= bottom && left <= right);
+        assert.ok(grid.slice(top, bottom + 1).every(row => row.slice(left, right + 1).every(cell => !cell)));
+        assert.equal((bottom - top + 1) * (right - left + 1), maxArea);
+      }
+    }
+  }
+});
+
 const DISABLED_FILE = "/data/contract-disabled-types.txt";
 const STOP = new Error("stop test loop");
 
@@ -139,7 +390,7 @@ function game(saved = new Map()) {
           type: c.type, data: globalThis.structuredClone(c.data), numTriesRemaining: () => c.tries,
           submit: answer => {
             g.submitted.push({ host, file, type: c.type, answer });
-            if (g.throwSubmit) throw new Error("submission error");
+            if (g.throwSubmit || g.throwSubmitType === c.type) throw new Error("submission error");
             c.tries--;
             if (g.reject || !assertAnswer(answer, c.expected)) {
               if (c.tries <= 0) g.contracts.delete(`${host}/${file}`);
@@ -189,7 +440,7 @@ test("manager scans cycles, home and unrooted hosts, exact suffixes, native answ
 test("manager discovers later contracts and reports each unsupported contract once per run", async () => {
   const g = game();
   g.passes = 3;
-  g.add("home", "unsupported.cct", "Compression III: LZ Compression", "data");
+  g.add("home", "unsupported.cct", "Future Contract Type", "data");
   g.add("home", "prototype.cct", "__proto__", "data");
   g.onSleep = () => { if (g.pass === 1) g.add("locked", "new.cct"); };
   await run(g);
@@ -252,6 +503,40 @@ test("solver and submission exceptions disable their types without repeated atte
     assert.ok(g.logs.some(log => log.includes("ERROR")));
   }
 });
+
+test("manager submits precise Square Root strings and valid empty string answers", async () => {
+  const g = game();
+  const root = 10n ** 100n + 123456789n;
+  g.add("home", "root.cct", "Square Root", root * root + root, root.toString());
+  g.add("locked", "no-path.cct", "Shortest Path in a Grid", [[0, 1], [1, 0]], "");
+  await run(g);
+  assert.deepEqual(g.submitted.map(c => c.answer), [root.toString(), ""]);
+  assert.equal(g.writes.length, 0);
+  assert.ok(g.logs.some(log => log.includes("30 solver types")));
+});
+
+for (const failure of ["solver", "rejected", "submission"]) {
+  test(`Square Root ${failure} failure logs BigInt, persists its disabled type, and continues safely`, async () => {
+    const g = game();
+    g.passes = 2;
+    const data = failure === "solver" ? -1n : (10n ** 100n) ** 2n;
+    g.add("home", "bad-root.cct", "Square Root", data, "wrong answer", 3);
+    g.add("home", "same-type.cct", "Square Root", 100n, "10");
+    g.add("locked", "prime.cct");
+    if (failure === "submission") g.throwSubmitType = "Square Root";
+    g.onWrite = () => assert.equal(g.submitted.length, failure === "solver" ? 0 : 1);
+    await run(g);
+    assert.deepEqual(g.submitted.map(c => c.file), failure === "solver" ? ["prime.cct"] : ["bad-root.cct", "prime.cct"]);
+    assert.deepEqual(JSON.parse(g.saved.get(DISABLED_FILE)), ["Square Root"]);
+    const diagnostic = g.logs.find(log => /^(SOLVER ERROR|SUBMISSION ERROR|FAILED)/.test(log));
+    assert.ok(diagnostic.includes(`input="${data}"`));
+    if (failure !== "solver") assert.ok(diagnostic.includes(`answer="${10n ** 100n}"`));
+    const restarted = game(g.saved);
+    restarted.add("home", "root.cct", "Square Root", 100n, "10");
+    await run(restarted);
+    assert.equal(restarted.submitted.length, 0);
+  });
+}
 
 test("malformed persisted state and failed or lost writes stop the manager safely", async () => {
   for (const saved of ["", "bad json", "null", "{}", "[1]", '[""]']) {

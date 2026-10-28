@@ -1,4 +1,4 @@
-import { DARKNET_FILES, DARKNET_MANAGER, DARKNET_PROGRAM, DARKNET_WORKER, isExplorer } from "./darknet.js";
+import { DARKNET_FILES, DARKNET_MANAGER, DARKNET_PROGRAM, DARKNET_WORKER, isExplorer, DARKNET_DIAGNOSTICS, validDarknetReport, darknetReportKey } from "./darknet.js";
 
 /** @param {import("@ns").NS} ns */
 export async function main(ns) {
@@ -21,11 +21,34 @@ export async function main(ns) {
   }
   ns.disableLog("ALL");
   const explorers = new Set();
+  let diagnostics = new Map();
+  let dirty = false;
+  try {
+    if (ns.fileExists(DARKNET_DIAGNOSTICS, "home")) {
+      const saved = JSON.parse(ns.read(DARKNET_DIAGNOSTICS));
+      if (!Array.isArray(saved) || saved.some(r => !validDarknetReport(r) || !Number.isSafeInteger(r.count) || r.count < 1 ||
+          !Number.isFinite(r.firstSeen) || !Number.isFinite(r.lastSeen))) throw new Error("Invalid darknet diagnostics");
+      diagnostics = new Map(saved.map(r => [darknetReportKey(r), r]));
+    }
+  } catch (error) {
+    ns.tprint(`Darknet diagnostics disabled; existing file preserved: ${String(error)}`);
+    diagnostics = null;
+  }
   const register = () => {
     for (let reply = ns.readPort(ns.pid); reply !== "NULL PORT DATA"; reply = ns.readPort(ns.pid)) {
       if (!reply || typeof reply !== "object" || !Number.isInteger(reply.pid) || reply.pid <= 0 || typeof reply.host !== "string") continue;
       const process = ns.getRunningScript(reply.pid);
-      if (isExplorer(process, ns.pid) && process.server === reply.host) explorers.add(reply.pid);
+      if (!isExplorer(process, ns.pid) || process.server !== reply.host) continue;
+      explorers.add(reply.pid);
+      if (!diagnostics || !validDarknetReport(reply)) continue;
+      const key = darknetReportKey(reply);
+      const previous = diagnostics.get(key);
+      // shortcut: retain 512 distinct blockers/timing sources; export fixtures before increasing the cap.
+      if (!previous && diagnostics.size >= 512) continue;
+      const record = { ...reply };
+      delete record.pid;
+      diagnostics.set(key, { ...record, firstSeen: previous?.firstSeen ?? Date.now(), lastSeen: Date.now(), count: (previous?.count ?? 0) + 1 });
+      dirty = true;
     }
   };
   ns.clearPort(ns.pid);
@@ -40,6 +63,17 @@ export async function main(ns) {
   let refreshIn = 0;
   while (true) {
     register();
+    if (dirty && diagnostics) {
+      try {
+        const text = JSON.stringify([...diagnostics.values()]);
+        await ns.write(DARKNET_DIAGNOSTICS, text, "w");
+        if (ns.read(DARKNET_DIAGNOSTICS) !== text) throw new Error("Diagnostics write failed");
+        dirty = false;
+      } catch (error) {
+        ns.tprint(`Darknet diagnostics could not be saved: ${String(error)}. Exploration continues.`);
+        diagnostics = null;
+      }
+    }
     for (const pid of explorers.keys()) {
       if (!ns.isRunning(pid)) explorers.delete(pid);
     }

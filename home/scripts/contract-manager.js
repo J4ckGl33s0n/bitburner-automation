@@ -2,6 +2,7 @@ import { scanAllHosts } from "./network.js";
 import { SOLVERS } from "./contracts.js";
 
 const DISABLED_FILE = "/data/contract-disabled-types.txt";
+const describe = value => JSON.stringify(value, (_, entry) => typeof entry === "bigint" ? entry.toString() : entry);
 
 /** @param {import("@ns").NS} ns */
 export async function main(ns) {
@@ -25,7 +26,7 @@ export async function main(ns) {
     return;
   }
   ns.disableLog("ALL");
-  ns.tprint(`Contract manager PID ${ns.pid}: 16 solver types, scanning every 30 seconds; submissions include the last attempt. Disabled: ${[...disabled].join(", ") || "none"}.`);
+  ns.tprint(`Contract manager PID ${ns.pid}: ${Object.keys(SOLVERS).length} solver types, scanning every 30 seconds; submissions include the last attempt. Disabled: ${[...disabled].join(", ") || "none"}.`);
   const reported = new Set();
   const disable = async (type, message) => {
     disabled.add(type);
@@ -78,7 +79,7 @@ export async function main(ns) {
         try {
           answer = SOLVERS[type](data);
         } catch (error) {
-          if (!await disable(type, `SOLVER ERROR ${host}/${file} (${type}): ${String(error)}; input=${JSON.stringify(data)}`)) return;
+          if (!await disable(type, `SOLVER ERROR ${host}/${file} (${type}): ${String(error)}; input=${describe(data)}`)) return;
           continue;
         }
         let reward;
@@ -86,11 +87,11 @@ export async function main(ns) {
           if (contract.numTriesRemaining() <= 0) continue;
           reward = contract.submit(answer);
         } catch (error) {
-          if (!await disable(type, `SUBMISSION ERROR ${host}/${file} (${type}): ${String(error)}; input=${JSON.stringify(data)}; answer=${JSON.stringify(answer)}`)) return;
+          if (!await disable(type, `SUBMISSION ERROR ${host}/${file} (${type}): ${String(error)}; input=${describe(data)}; answer=${describe(answer)}`)) return;
           continue;
         }
         if (reward) ns.tprint(`SOLVED ${host}/${file} (${type}): ${reward}`);
-        else if (!await disable(type, `FAILED ${host}/${file} (${type}); input=${JSON.stringify(data)}; answer=${JSON.stringify(answer)}`)) return;
+        else if (!await disable(type, `FAILED ${host}/${file} (${type}); input=${describe(data)}; answer=${describe(answer)}`)) return;
       }
     }
     await ns.sleep(30000);

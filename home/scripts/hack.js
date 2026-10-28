@@ -2,19 +2,20 @@ import { HOME_RESERVE, MANAGER, WORKERS, findManagers, freeRam, getRunners, root
 
 /** @param {import("@ns").NS} ns */
 export async function main(ns) {
-  const maxTargets = Number(ns.args[0] ?? 3);
+  const maxTargets = Number(ns.args[0] ?? 0);
   const threadCap = Number(ns.args[1] ?? 0);
+  const idleXp = Number(ns.args[2] ?? 0);
   if (ns.getHostname() !== "home" || ns.self().threads !== 1) {
     ns.tprint("Run hack.js on home with one thread. Worker threads are automatic.");
     return;
   }
-  if (!Number.isInteger(maxTargets) || maxTargets < 1 ||
-      !Number.isInteger(threadCap) || threadCap < 0) {
-    ns.tprint("Usage: run /scripts/hack.js [max-targets=3] [thread-cap=0 (auto)]");
+  if (!Number.isInteger(maxTargets) || maxTargets < 0 ||
+      !Number.isInteger(threadCap) || threadCap < 0 || ![0, 1].includes(idleXp)) {
+    ns.tprint("Usage: run /scripts/hack.js [max-targets=0 (auto)] [thread-cap=0 (auto)] [idle-xp=0|1]");
     return;
   }
   ns.disableLog("ALL");
-  const files = [MANAGER, "/scripts/network.js", ...Object.values(WORKERS)];
+  const files = [MANAGER, "/scripts/network.js", "/scripts/hacking-metrics.js", ...Object.values(WORKERS)];
   for (const file of files) {
     if (!ns.fileExists(file, "home")) {
       ns.tprint(`Missing ${file} on home.`);
@@ -59,11 +60,11 @@ export async function main(ns) {
     ns.tprint(`Starting manager on ${host}; home worker reserve: 4 GB.`);
     if (host === "home") {
       // spawn terminates the launcher by throwing; do not catch that termination.
-      ns.spawn(MANAGER, { threads: 1, spawnDelay: 0 }, maxTargets, threadCap);
+      ns.spawn(MANAGER, { threads: 1, spawnDelay: 0 }, maxTargets, threadCap, idleXp);
       return;
     }
     try {
-      if (ns.exec(MANAGER, host, { threads: 1, preventDuplicates: true }, maxTargets, threadCap)) return;
+      if (ns.exec(MANAGER, host, { threads: 1, preventDuplicates: true }, maxTargets, threadCap, idleXp)) return;
       ns.print(`Could not start manager on ${host}; trying another host.`);
     } catch (error) {
       ns.print(`WARN ${host}: controller startup failed: ${String(error)}`);
